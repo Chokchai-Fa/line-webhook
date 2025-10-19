@@ -36,7 +36,7 @@ func NewRouter(opts RouterOptions) *echo.Echo {
 	// Routes
 	h := handler.New(opts.Config, opts.Bot)
 	// Health check
-	e.GET("/", func(c echo.Context) error {
+	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{
 			"status":  "ok",
 			"message": "LINE Bot Webhook Server is running",

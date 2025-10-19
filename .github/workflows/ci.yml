@@ -6,17 +6,20 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  DOCKER_REGISTRY: docker.io
+  IMAGE_NAME: line-webhook
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    env:
-      IMAGE: ${{ secrets.DOCKERHUB_REPOSITORY }}
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.23'
 
@@ -36,27 +39,54 @@ jobs:
       - name: Run tests
         run: go test ./... -v
 
-      - name: Build binary (sanity)
+      - name: Build binary (sanity check)
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o line-webhook .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o line-webhook .
+
+      - name: Generate semantic version tag
+        id: vars
+        run: |
+          MAJOR=1
+          MINOR=0
+          PATCH=${{ github.run_number }}
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          SEMVER_TAG="v${MAJOR}.${MINOR}.${PATCH}-${SHORT_SHA}"
+          echo "semver_tag=${SEMVER_TAG}" >> $GITHUB_OUTPUT
+          echo "Generated semver tag: ${SEMVER_TAG}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
         with:
+          registry: ${{ env.DOCKER_REGISTRY }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.vars.outputs.semver_tag }},enable={{is_default_branch}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image (ARM64 only)
+        id: build-and-push
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          push: true
-          platforms: linux/amd64
-          tags: |
-            ${{ env.DOCKERHUB_REPOSITORY }}:latest
-            ${{ env.DOCKERHUB_REPOSITORY }}:${{ github.sha }}
+          platforms: linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Image summary
-        run: |
-          echo "Pushed $IMAGE:latest and $IMAGE:${{ github.sha }}"
+      - name: Image digest
+        if: github.event_name != 'pull_request'
+        run: echo "Image digest: ${{ steps.build-and-push.outputs.digest }}"

@@ -1,4 +1,4 @@
-name: CI
+name: Build and Push Go Docker Image
 
 on:
   push:
@@ -89,4 +89,6 @@ jobs:
 
       - name: Image digest
         if: github.event_name != 'pull_request'
-        run: echo "Image digest: ${{ steps.build-and-push.outputs.digest }}"
+        run: |
+          DIGEST="${{ steps.build-and-push.outputs.imageDigest }}"
+          echo "Image digest: $DIGEST"

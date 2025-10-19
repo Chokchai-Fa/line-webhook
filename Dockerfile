@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for line-webhook
-# Builder: use Alpine-based Go image for small size and speed
+# Fixed to build arm64 binaries (matches your host)
 FROM golang:1.23-alpine AS builder
 
 # Install necessary packages for fetching modules and building
@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 
 # Build a static, stripped binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
     go build -ldflags "-s -w" -o /line-webhook ./
 
 # Runtime image: small Alpine with CA certs
